@@ -35,12 +35,13 @@
 // CODE
 
 // Constants
-const short LED_red = 12;
-const short LED_green = 11;
-const short LED_yellow = 13;
+const short LED_red = 10;
+const short LED_green = 9;
+const short LED_yellow = 11;
 const short PushButton = 8;
-const short Potentiometer_Input = 9;
+const short Potentiometer_Input = 0;
 const unsigned short framerate = 100; // 100 for smooth operation, 2 for debugging
+const boolean using_Pot = true;
 
 // variables. NEED TO ADD DESCRIPTIONS OF ALL VARIABLES.
 unsigned int PushButtonCounter;
@@ -48,15 +49,17 @@ short State;
 int Pot_raw;
 boolean New_State_Flag;
 unsigned int loop_counter;
-unsigned int threshold = framerate; // default to 1 second blink.
+unsigned int threshold_blink = framerate; // default to 1 second blink.
 boolean LED_State;
 short Knight_Rider_LEDs[] = { LED_green, LED_red, LED_yellow}; // populate Knight_Rider_LED array with the appropriate order of lights
 unsigned int delay_time;
+int Pot_old = -500; // will be overwritten immediately
+unsigned int threshold_knight_rider = (framerate * 1) / 12; // playing with values right now
 
 void setup()
 {
   // initialize serial communication for debugging purposes
-  Serial.begin(9600);
+  Serial.begin(19200);
   // set lights as output
   pinMode(LED_red, OUTPUT);
   pinMode(LED_green, OUTPUT);
@@ -99,9 +102,21 @@ void loop()
   // X == 1, just depends on how much math you want to do). This involves shifting out the oldest value, then
   // shifting in the new reading.
   Pot_raw = analogRead(Potentiometer_Input);
+  //Serial.print("Pot Reading: ");
+  //Serial.println(Pot_raw);
+  if (abs(Pot_raw - Pot_old) > 10)
+  {
+    Pot_old = Pot_raw;
+  }
+  if (using_Pot == true) {
+    threshold_blink = ((long)framerate * (Pot_old + 150)) / 1624; // can get too large for integers during intermediate math, thats why we cast to long
+    // Maximum: 11 Hz, Minimum: 1.4 Hz
+    threshold_knight_rider = ((long)framerate * (Pot_old + 1024)) / 20480; // maximum: 20 Hz, Minimum: 10 Hz
+    //Serial.println(threshold_blink);
+  }
   
-  // filter the potentiometer readings to reduce bounce (average last 10? minimum threshold for change?, gaussian distribution?
-  // more advanced math?). Also calculate threshold value for blink speed and brightness.
+  // filter the potentiometer readings to reduce bounce (average last 10? minimum threshold_blink for change?, gaussian distribution?
+  // more advanced math?). Also calculate threshold_blink value for blink speed and brightness.
   // IGNORED FOR NOW.
   
   
@@ -113,13 +128,13 @@ void loop()
   
   // state 1: constanly ON: if initialization flag is set, turn on all lights. else, adjust brightness based on potentiometer reading (using PWM)
   
-  // state 2: Blinking: if initialization flag is set, turn all lights on and initialize loop counter to 0. else, if counter has reached threshold,
-  // invert the state of all the lights, then reset the counter. threshold is set by potentiometer value (ie, rate of blinking). Note: multiple states
+  // state 2: Blinking: if initialization flag is set, turn all lights on and initialize loop counter to 0. else, if counter has reached threshold_blink,
+  // invert the state of all the lights, then reset the counter. threshold_blink is set by potentiometer value (ie, rate of blinking). Note: multiple states
   // use this value, so it could be calculated before entering the switch statement.
   
   // state 3: KNIGHT RIDER: if initialization flag is set, initialize loop counter to 0, turn off all but the first light, turn that one on. else, 
-  // if counter has reached next threshold, turn on the next light and turn off the previous light. threshold is set by potentiometer 
-  // value (ie, controls rate of blinking). if counter exceeds final threshold value, reset counter.
+  // if counter has reached next threshold_blink, turn on the next light and turn off the previous light. threshold_blink is set by potentiometer 
+  // value (ie, controls rate of blinking). if counter exceeds final threshold_blink value, reset counter.
   // optionally, have the lights work back and forth with a double delay on both ends before counter is reset, like a true knight rider.
   
   if (New_State_Flag) {Serial.print("Current State: "); Serial.println(State);}
@@ -131,13 +146,10 @@ void loop()
       }
       break;
     case 1:
-      if (New_State_Flag) {
-        allHigh();
-      }
-      else
-      {
-        // ADJUST BRIGHTNESS, WILL DO LATER.
-      }
+      // Adjust Brightness
+      analogWrite(LED_red, (((long)Pot_old + 100) * 255) / 1124);
+      analogWrite(LED_green, (((long)Pot_old + 100) * 255) / 1124);
+      analogWrite(LED_yellow, (((long)Pot_old + 100) * 255) / 1124);
       break;
     case 2:
       if (New_State_Flag) {
@@ -147,7 +159,7 @@ void loop()
       }
       else
       {
-        if (loop_counter >= threshold) {
+        if (loop_counter >= threshold_blink) {
           // Very un-elegant way of doing this. would be much better to just invert the states
           //Serial.print("LED State: ");
           //Serial.println(LED_State); // Debugging
@@ -177,26 +189,26 @@ void loop()
         // VERY UGLY. HARDCODED IN. SHOULD BE FIXED. This would be solved by the above suggestion of shifting an array back and forth.
         // ADDITIONAL NOTE OF BADDNESS: Order of if statements is important, since the final if statement will evaluate true even when the
         // first one does, although we only want one to execute.
-        //Serial.print("Threshold Value: "); // debugging
-        //Serial.println(threshold);
-        //Serial.print("Multiplied Threshold Value: ");
-        //Serial.println((threshold * 4));
+        //Serial.print("threshold_blink Value: "); // debugging
+        //Serial.println(threshold_blink);
+        //Serial.print("Multiplied threshold_blink Value: ");
+        //Serial.println((threshold_blink * 4));
         //Serial.print("Loop Counter: ");
         //Serial.println(loop_counter);
-        if (loop_counter >= threshold * 4) { // first light on
+        if (loop_counter >= threshold_knight_rider * 6 ) { // first light on
           oneLightOn(0);
           loop_counter = 0;
           //Serial.print("Color: Green");
         }
-        else if (loop_counter >= threshold * 3) { // second light on
+        else if (loop_counter >= threshold_knight_rider * 5) { // second light on
           oneLightOn(1);
           //Serial.print("Color: Red");
         }
-        else if (loop_counter >= threshold * 2) { // third light on
+        else if (loop_counter >= threshold_knight_rider * 3) { // third light on
           oneLightOn(2);
           //Serial.print("Color: Yellow");
         }
-        else if (loop_counter >= threshold * 1) { // second light on
+        else if (loop_counter >= threshold_knight_rider * 2) { // second light on
           oneLightOn(1);
           //Serial.print("Color: Red");
         }
