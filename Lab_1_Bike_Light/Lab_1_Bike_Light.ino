@@ -16,20 +16,19 @@
 // to run through game loop at refresh rate even when system is stagnant), no precision timing*, and there will always be an unneccessary minor delay between
 // input polling. This will be too fast for the human eye, but a button could theoretically be pressed and released so fast that the system does not register.
 
-// *note: precision timing could still be achieved using a game-loop style, but would require additional work that this project would not benifiet from.
-// **note: an actual state machine would not need to continue returning to the main loop to check inputs, but would rather stay in a given state until 
-// driven to change, typically by interrupts. This is why we refer to our code as a hybrid of a game loop and a state machine.
-
 // possible future improvements:
-// include the ability to disable the potentiometer, either via a firmware change of a single constant, or via an external button (pushbutton or SPST). This
-// would involve having constants for all the 'standards' that are normally derived from the potentiometer, and every time the potentiometer value is used having an
-// if statement to check which value to use.
-// functionalize the main loop
-// power saving options- power saving was not considered as a part of this project, since power savings would have to start with the electronics. (LED current
+// many possible optimizations for knight rider mode, including better support for arbitrary numbers of lights, computational efficiency,
+// and code clarity.
+// functionalize the main loop, for readability and reusability
+// power saving options- power saving was not considered as a part of this project, since power savings would have to start with the electronics. (for example, LED current
 // is set using a simple current limiting resistor- very wasteful). For this to be feasable as an actual bike light (battery operated), many changes could be made
 // to the code to reduce power consumption. (including moving to a true interrupt driven state machine, rather than a game loop).
 // create a state machine object to make code more portable and to reduce the amount of code present in the main loop,
 // since many similar projects use a state machine/ game loop** style of refresh.
+
+// *note: precision timing could still be achieved using a game-loop style, but would require additional work that this project would not benifiet from.
+// **note: an actual state machine would not need to continue returning to the main loop to check inputs, but would rather stay in a given state until 
+// driven to change, typically by interrupts. This is why we refer to our code as a hybrid of a game loop and a state machine.
 
 //----------------------------------------------------------------------------------------------------------------------------------------------------
 // START CODE
@@ -63,14 +62,15 @@ unsigned int threshold_knight_rider = (framerate * 1) / 12; // default to 12 Hz.
 void setup()
 {
   // initialize serial communication for debugging purposes
-  Serial.begin(19200);
+  // Serial.begin(19200);
   // set lights as output
   pinMode(LED_red, OUTPUT);
   pinMode(LED_green, OUTPUT);
   pinMode(LED_yellow, OUTPUT);  
   // set pushbutton and potentiometer reading as inputs
   pinMode(PushButton, INPUT);
-  pinMode(Potentiometer_Input, INPUT);
+  pinMode(Potentiometer_Input, INPUT); // this may actually set digital pin 0 to input,
+  // not really important since digital pin 0 is not used and pins default to input state anyway.
 }
 
 
@@ -105,7 +105,8 @@ void loop()
     Pot_old = Pot_raw;
   }
   
-  // calculate the appropriate thresholds for the blink modes.
+  // calculate the appropriate thresholds for the blink modes. magic numbers based off of hard coded frequency ranges
+  // determined experimentally.
   if (using_Pot == true) {
     threshold_blink = ((long)framerate * (Pot_old + 150)) / 1624; // can get too large for integers during intermediate math, thats why we cast to long
     // Maximum: 11 Hz, Minimum: 1.4 Hz
@@ -118,7 +119,7 @@ void loop()
   
   // state 0: OFF. state 1: constanly ON. state 2: Blinking. state 3: KNIGHT RIDER
   
-  if (New_State_Flag) {Serial.print("Current State: "); Serial.println(State);}
+  // if (New_State_Flag) {Serial.print("Current State: "); Serial.println(State);} // debugging
   switch(State)
   {
     case 0: // Case: OFF. if initialization flag is set, turn off all lights. else, do nothing.
@@ -131,7 +132,8 @@ void loop()
       // Adjust Brightness
       if (using_Pot == true)
       {
-        analogWrite(LED_red, (((long)Pot_old + 100) * 255) / 1124);
+        analogWrite(LED_red, (((long)Pot_old + 100) * 255) / 1124); // magic numbers determined experimentally,
+        // designed to make sure that the LEDs are never completely off, even when fully dimmed.
         analogWrite(LED_green, (((long)Pot_old + 100) * 255) / 1124);
         analogWrite(LED_yellow, (((long)Pot_old + 100) * 255) / 1124);
       }
@@ -151,15 +153,15 @@ void loop()
       {
         if (loop_counter >= threshold_blink) { // counter has reached threshold. invert the light states. reset loop counter for next blink.
           // Very un-elegant way of doing this. would be much better to just invert the states
-          if (LED_State == true){
+          if (LED_State == true){// lights are on, turn them off
             allLow();
           }
-          else{
+          else{ // lights are off, turn them on
             allHigh();
           }
           LED_State = !LED_State;
 
-          loop_counter = 0;
+          loop_counter = 0; // reset the counter for the next blink
         }
         loop_counter ++;        
       }
@@ -167,17 +169,19 @@ void loop()
     case 3: // Case: Knight Rider. initialize loop counter to 0
       if (New_State_Flag) {
         loop_counter = 0;
-        // could use an array that represents the actuall outputs, then just shift left and right. This would
+        // could use an array that represents the actual outputs, then just shift left and right. This would
         // be computationally much faster, and the code would be shorter, though more complicated to write.
+        // (direct port access to the PORTB register)
         oneLightOn(0);
       }
       else {
-        // VERY UGLY. HARDCODED IN. SHOULD BE FIXED. This would be solved by the above suggestion of shifting an array back and forth.
-        // ADDITIONAL NOTE OF BADDNESS: Order of if statements is important, since the final if statement will evaluate true even when the
-        // first one does, although we only want one to execute.
+        // Note: Order of if statements is important, since the final if statement will evaluate true even when the
+        // first one does, although we only want one to execute. magic numbers are based on the number of lights we have,
+        // so adding more lights would require rewriting some of this code. this section is listed for re-write under the
+        // list of future improvements.
         if (loop_counter >= threshold_knight_rider * 6 ) { // first light on
           oneLightOn(0);
-          loop_counter = 0;
+          loop_counter = 0; // the full sequence has been completed.
         }
         else if (loop_counter >= threshold_knight_rider * 5) { // second light on
           oneLightOn(1);
@@ -185,7 +189,7 @@ void loop()
         else if (loop_counter >= threshold_knight_rider * 3) { // third light on
           oneLightOn(2);
         }
-        else if (loop_counter >= threshold_knight_rider * 2) { // second light on
+        else if (loop_counter >= threshold_knight_rider * 2) { // second light on again
           oneLightOn(1);
         }
         loop_counter ++;
@@ -193,7 +197,7 @@ void loop()
         
       break;
     default:
-      Serial.println("ERROR: Unknown state accessed.");
+      // Serial.println("ERROR: Unknown state accessed.");
       break;
   }
   
