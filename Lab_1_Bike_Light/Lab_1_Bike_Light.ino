@@ -32,29 +32,33 @@
 // since many similar projects use a state machine/ game loop** style of refresh.
 
 //----------------------------------------------------------------------------------------------------------------------------------------------------
-// CODE
+// START CODE
 
-// Constants
-const short LED_red = 10;
+// CONSTANTS
+const short LED_red = 10; // LED pin numbers (digital pins)
 const short LED_green = 9;
 const short LED_yellow = 11;
-const short PushButton = 8;
-const short Potentiometer_Input = 0;
-const unsigned short framerate = 100; // 100 for smooth operation, 2 for debugging
-const boolean using_Pot = true;
+const short PushButton = 8; // pushbutton pin number
+const short Potentiometer_Input = 0; // pot pin number (analog input pin)
+const unsigned short framerate = 100; // 100 for smooth operation, 2 for debugging. sets the refresh rate.
+const boolean using_Pot = true; // determines if the potentiometer is used or not. Currently, only true is supported.
+const unsigned int delay_time = 1000/(framerate);   // delay for 1/framerate, to approximately set loop speed. (this ignores calculation and code execution times, but for 
+// this project timing is non-critical, and the delay time will dwarf execution time for any reasonable frame rate, ie., 30-100)
+// --------------------------------------------------------------------------------------------------------------------------------------------------
 
-// variables. NEED TO ADD DESCRIPTIONS OF ALL VARIABLES.
-unsigned int PushButtonCounter;
-short State;
-int Pot_raw;
-boolean New_State_Flag;
-unsigned int loop_counter;
-unsigned int threshold_blink = framerate; // default to 1 second blink.
-boolean LED_State;
+// VARIABLES
+unsigned int PushButtonCounter; // how many loops has the button been held for? Used for debouncing.
+short State; // keeps track of which state the lights are in, off, blinking, flashing, or knight rider.
+int Pot_raw; // raw reading from the potentiometer, unfiltered
+int Pot_old = -500; // will be overwritten immediately, initial value is unimportant. stores the filtered potentiometer reading
+boolean New_State_Flag; // set true when we first change state. allows the state to know when it was first entered, in case initialization is neccessary.
+unsigned int loop_counter; // counts the loops, used by any state that needs to continue operations from one iteration to the next.
+unsigned int threshold_blink = framerate; // How fast do the lights blink during blink mode. default to 1Hz. may be reset by pot.
+boolean LED_State; // With more elegant code, this variable should not be neccessary. Keeps track of whether the lights are on or off during the blink mode.
 short Knight_Rider_LEDs[] = { LED_green, LED_red, LED_yellow}; // populate Knight_Rider_LED array with the appropriate order of lights
-unsigned int delay_time;
-int Pot_old = -500; // will be overwritten immediately
-unsigned int threshold_knight_rider = (framerate * 1) / 12; // playing with values right now
+unsigned int threshold_knight_rider = (framerate * 1) / 12; // default to 12 Hz. sets the speed of the knight rider mode
+
+// ----------------------------------------------------------------------------------------------------------------------------------------------------
 
 void setup()
 {
@@ -75,15 +79,13 @@ void loop()
   // ---------------------------------------------------------------------------------------------------------------------------------------------
   // MEASUREING THE WORLD
   // check the pushbutton, if buttton is pressed, increment the number of times the button has been held for.
-  // if that number == 2, change state, and set the entering new state flag. this debounces the button (1 reading won't do anything), and stops the loop from incrementing the 
-  // state over and over when the button is held down.
-  //Serial.print("Push Button Counter: "); // debugging
-  //Serial.println(PushButtonCounter);
   if (digitalRead(PushButton)) 
   {
     PushButtonCounter ++;
   }
   else {PushButtonCounter = 0;}
+  // if that number == 2, change state, and set the entering new state flag. this debounces the button (1 reading won't do anything), and stops the loop from incrementing the 
+  // state over and over when the button is held down.
   if (PushButtonCounter == 2)
   {
     State ++; // 0 == OFF, 1 == ON, 2 == BLINKING, 3 == KNIGHT RIDER
@@ -92,84 +94,68 @@ void loop()
   if (State > 3) {State = 0;}
   
   // if the number of times the button has been pressed is > large number (1000?), reset to small number (5?). This
-  // prevents overflow if the button is held indefinetly, but also must be large enough that change state doesn't trigger.
+  // prevents overflow if the button is held indefinetly, but the reset value must be large enough that change state doesn't trigger.
   if (PushButtonCounter > 60000) {PushButtonCounter = 20;}
   
-  // this last section could have been accomplished with states (off, debouncing, or on), but this option allows you to easily pick
-  // how long you want to debounce for, as a function of refresh rate.
-  
-  // read the potentiometer, store into array that keeps last X readings (where X ~10?? could work if
-  // X == 1, just depends on how much math you want to do). This involves shifting out the oldest value, then
-  // shifting in the new reading.
+  // read the potentiometer
   Pot_raw = analogRead(Potentiometer_Input);
-  //Serial.print("Pot Reading: ");
-  //Serial.println(Pot_raw);
+  // filter the reading to avoid errotic bouncing.
   if (abs(Pot_raw - Pot_old) > 10)
   {
     Pot_old = Pot_raw;
   }
+  
+  // calculate the appropriate thresholds for the blink modes.
   if (using_Pot == true) {
     threshold_blink = ((long)framerate * (Pot_old + 150)) / 1624; // can get too large for integers during intermediate math, thats why we cast to long
     // Maximum: 11 Hz, Minimum: 1.4 Hz
     threshold_knight_rider = ((long)framerate * (Pot_old + 1024)) / 20480; // maximum: 20 Hz, Minimum: 10 Hz
-    //Serial.println(threshold_blink);
   }
   
-  // filter the potentiometer readings to reduce bounce (average last 10? minimum threshold_blink for change?, gaussian distribution?
-  // more advanced math?). Also calculate threshold_blink value for blink speed and brightness.
-  // IGNORED FOR NOW.
-  
-  
+  // END MEASUREING THE WORLD
   // -------------------------------------------------------------------------------------------------------------------------------------------------
   // STATES: CONTROLLING THE WORLD  
   
-  // now, use switch statement to select current state.
-  // state 0: OFF. if initialization flag is set, turn off all lights. else, do nothing.
-  
-  // state 1: constanly ON: if initialization flag is set, turn on all lights. else, adjust brightness based on potentiometer reading (using PWM)
-  
-  // state 2: Blinking: if initialization flag is set, turn all lights on and initialize loop counter to 0. else, if counter has reached threshold_blink,
-  // invert the state of all the lights, then reset the counter. threshold_blink is set by potentiometer value (ie, rate of blinking). Note: multiple states
-  // use this value, so it could be calculated before entering the switch statement.
-  
-  // state 3: KNIGHT RIDER: if initialization flag is set, initialize loop counter to 0, turn off all but the first light, turn that one on. else, 
-  // if counter has reached next threshold_blink, turn on the next light and turn off the previous light. threshold_blink is set by potentiometer 
-  // value (ie, controls rate of blinking). if counter exceeds final threshold_blink value, reset counter.
-  // optionally, have the lights work back and forth with a double delay on both ends before counter is reset, like a true knight rider.
+  // state 0: OFF. state 1: constanly ON. state 2: Blinking. state 3: KNIGHT RIDER
   
   if (New_State_Flag) {Serial.print("Current State: "); Serial.println(State);}
   switch(State)
   {
-    case 0:
+    case 0: // Case: OFF. if initialization flag is set, turn off all lights. else, do nothing.
       if (New_State_Flag) {
         allLow();
       }
       break;
-    case 1:
+      
+    case 1: // Case: ON. Adjust brightness based on potentiometer reading (using PWM)
       // Adjust Brightness
-      analogWrite(LED_red, (((long)Pot_old + 100) * 255) / 1124);
-      analogWrite(LED_green, (((long)Pot_old + 100) * 255) / 1124);
-      analogWrite(LED_yellow, (((long)Pot_old + 100) * 255) / 1124);
-      break;
-    case 2:
-      if (New_State_Flag) {
-        loop_counter = 1;
-        allLow();
-        //Serial.print("ALL LOW FIRST TIME");
+      if (using_Pot == true)
+      {
+        analogWrite(LED_red, (((long)Pot_old + 100) * 255) / 1124);
+        analogWrite(LED_green, (((long)Pot_old + 100) * 255) / 1124);
+        analogWrite(LED_yellow, (((long)Pot_old + 100) * 255) / 1124);
       }
       else
       {
-        if (loop_counter >= threshold_blink) {
+        digitalWrite(LED_red, HIGH);
+        digitalWrite(LED_green, HIGH);
+        digitalWrite(LED_yellow, HIGH);
+      }
+      break;
+    case 2: // Case: Blinking. if initialization flag is set, reset loop counter.
+      if (New_State_Flag) {
+        loop_counter = 1; // correcting for off by 1 error.
+        allLow();
+      }
+      else
+      {
+        if (loop_counter >= threshold_blink) { // counter has reached threshold. invert the light states. reset loop counter for next blink.
           // Very un-elegant way of doing this. would be much better to just invert the states
-          //Serial.print("LED State: ");
-          //Serial.println(LED_State); // Debugging
           if (LED_State == true){
             allLow();
-            //Serial.print("ALL LOW");
           }
           else{
             allHigh();
-            //Serial.print("ALL HIGH");
           }
           LED_State = !LED_State;
 
@@ -178,7 +164,7 @@ void loop()
         loop_counter ++;        
       }
       break;
-    case 3:
+    case 3: // Case: Knight Rider. initialize loop counter to 0
       if (New_State_Flag) {
         loop_counter = 0;
         // could use an array that represents the actuall outputs, then just shift left and right. This would
@@ -189,28 +175,18 @@ void loop()
         // VERY UGLY. HARDCODED IN. SHOULD BE FIXED. This would be solved by the above suggestion of shifting an array back and forth.
         // ADDITIONAL NOTE OF BADDNESS: Order of if statements is important, since the final if statement will evaluate true even when the
         // first one does, although we only want one to execute.
-        //Serial.print("threshold_blink Value: "); // debugging
-        //Serial.println(threshold_blink);
-        //Serial.print("Multiplied threshold_blink Value: ");
-        //Serial.println((threshold_blink * 4));
-        //Serial.print("Loop Counter: ");
-        //Serial.println(loop_counter);
         if (loop_counter >= threshold_knight_rider * 6 ) { // first light on
           oneLightOn(0);
           loop_counter = 0;
-          //Serial.print("Color: Green");
         }
         else if (loop_counter >= threshold_knight_rider * 5) { // second light on
           oneLightOn(1);
-          //Serial.print("Color: Red");
         }
         else if (loop_counter >= threshold_knight_rider * 3) { // third light on
           oneLightOn(2);
-          //Serial.print("Color: Yellow");
         }
         else if (loop_counter >= threshold_knight_rider * 2) { // second light on
           oneLightOn(1);
-          //Serial.print("Color: Red");
         }
         loop_counter ++;
       }    
@@ -221,40 +197,45 @@ void loop()
       break;
   }
   
-  
+ // END STATES: CONTROLLING THE WORLD 
  // -------------------------------------------------------------------------------------------------------------------------------------------------
-  
+ // COMPLETEING LOOP LOGISTICS 
   
   // clear the entering new state flag (if any of the states needed to initialize on state change, they have already done so)
   New_State_Flag = false;
-  
-  // increment loop counter. no need to worry about overflow- indevidual states will reset the counter when needed for that state.
-  // UPDATE: Done in the indevidual states that need it.
-  
-  // delay for 1/framerate, to approximately set loop speed. (this ignores calculation and code execution times, but for 
-  // this project timing is non-critical, and the delay time will dwarf execution time for any reasonable frame rate, ie., 30-100)
-  delay_time = 1000/(framerate);
-  //Serial.print("Delay Time: ");
-  //Serial.println(delay_time); // debugging
-  delay(delay_time);  
-}
 
+  delay(delay_time); // delay to set frame rate.
+} // END MAIN LOOP
 
+// END MAIN LOOP: COMPLETEING LOOP LOGISTICS
+// -------------------------------------------------------------------------------------------------------------------------------------------------------
+// SUPPORT FUNCTIONS
+
+// Turn on all lights
 void allHigh() {
   digitalWrite(LED_red, HIGH);
   digitalWrite(LED_green, HIGH);
   digitalWrite(LED_yellow, HIGH);
 }
 
+// turn off all lights
 void allLow() {
   digitalWrite(LED_red, LOW);
   digitalWrite(LED_green, LOW);
   digitalWrite(LED_yellow, LOW);
 }
 
-void oneLightOn(short light) { // light must be 0,1, or 2. No error checking provided. function not called by humans.
+
+// turns on one of the three lights, turn off the other two.
+void oneLightOn(short light) { // light must be 0,1, or 2. No error checking provided.
   digitalWrite(Knight_Rider_LEDs[0], LOW);
   digitalWrite(Knight_Rider_LEDs[1], LOW);
   digitalWrite(Knight_Rider_LEDs[2], LOW);
   digitalWrite(Knight_Rider_LEDs[light], HIGH);
 }
+
+// END SUPPORT FUNCTIONS
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------
+// END PROGRAM
+
+
